@@ -1,0 +1,150 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <title>Agendamento de Consultas</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        input { margin-bottom: 10px; padding: 5px; width: calc(100% - 12px); }
+        button { padding: 8px 12px; cursor: pointer; }
+        .error-message { color: #D8000C; background-color: #FFD2D2; padding: 10px; margin-top: 10px; border-radius: 4px; display: none; }
+        .error-text { color: #D8000C; font-size: 0.8em; display: block; height: 1em; }
+    </style>
+</head>
+<body>
+
+<h1>Agendamento de Consultas</h1>
+
+<h3>Registrar Nova Consulta</h3>
+<table>
+    <tr><td>ID do Paciente:</td><td><input type="number" id="idPaciente" size="20"><span id="idPaciente-error" class="error-text"></span></td></tr>
+    <tr><td>Especialidade Médica:</td><td><input type="text" id="especialidadeMedica" size="50"><span id="especialidadeMedica-error" class="error-text"></span></td></tr>
+    <tr><td>Nome do Médico(a):</td><td><input type="text" id="nomeMedico" size="50"><span id="nomeMedico-error" class="error-text"></span></td></tr>
+    <tr><td>Valor da Consulta (R$):</td><td><input type="number" id="valorConsulta" size="20" step="0.01"><span id="valorConsulta-error" class="error-text"></span></td></tr>
+    <tr><td>Data e Hora:</td><td><input type="datetime-local" id="dataHoraConsulta" size="30"><span id="dataHoraConsulta-error" class="error-text"></span></td></tr>
+</table>
+<button onclick="criarAgendamento()">Agendar Consulta</button>
+<div id="general-error" class="error-message"></div>
+
+<hr>
+
+<h3>Consultas Agendadas</h3>
+<button onclick="carregarAgendamentos()">Atualizar Lista</button>
+<div id="listaAgendamentos"></div>
+
+</body>
+</html>
+
+<script type="text/javascript">
+const urlAPIAgendamentos = "http://localhost:9000/v1/agendamentos";
+
+
+function clearErrors() {
+    document.querySelectorAll('.error-text').forEach(span => span.textContent = '');
+    const generalError = document.getElementById('general-error');
+    if (generalError) {
+        generalError.style.display = 'none';
+        generalError.textContent = '';
+    }
+}
+
+function showError(fieldId, message) {
+    document.getElementById(fieldId).textContent = message;
+}
+
+function validateAgendamentoForm() {
+    clearErrors();
+    let isValid = true;
+
+    const idPaciente = document.getElementById('idPaciente').value;
+    const especialidade = document.getElementById('especialidadeMedica').value.trim();
+    const nomeMedico = document.getElementById('nomeMedico').value.trim();
+    const valorConsulta = document.getElementById('valorConsulta').value;
+    const dataHora = document.getElementById('dataHoraConsulta').value;
+
+    if (!idPaciente) { showError('idPaciente-error', 'O ID do Paciente é obrigatório.'); isValid = false; }
+    if (!especialidade) { showError('especialidadeMedica-error', 'A especialidade é obrigatória.'); isValid = false; }
+    if (!nomeMedico) { showError('nomeMedico-error', 'O nome do médico é obrigatório.'); isValid = false; }
+    if (!valorConsulta || parseFloat(valorConsulta) <= 0) { showError('valorConsulta-error', 'O valor da consulta deve ser um número maior que zero.'); isValid = false; }
+    if (!dataHora) { showError('dataHoraConsulta-error', 'A data e hora são obrigatórias.'); isValid = false; }
+    else if (new Date(dataHora) < new Date()) { showError('dataHoraConsulta-error', 'A data da consulta não pode ser no passado.'); isValid = false; }
+
+    return isValid;
+}
+
+async function handleApiError(response, context = 'Erro') {
+    const errorText = await response.text();
+    const errorDiv = document.getElementById('general-error');
+    errorDiv.textContent = `${context} ${response.status}: ${errorText}`;
+    errorDiv.style.display = 'block';
+}
+
+
+async function criarAgendamento() {
+    if (!validateAgendamentoForm()) {
+        return;
+    }
+
+    const body = {
+        "idPaciente": parseInt(document.getElementById("idPaciente").value),
+        "especialidadeMedica": document.getElementById("especialidadeMedica").value,
+        "nomeMedico": document.getElementById("nomeMedico").value,
+        "valorConsulta": parseFloat(document.getElementById("valorConsulta").value),
+        "dataHoraConsulta": document.getElementById("dataHoraConsulta").value
+    };
+
+    try {
+        const response = await fetch(`${urlAPIAgendamentos}/processar`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+        });
+        if (response.ok) { 
+            alert("Consulta agendada com sucesso!");
+            document.getElementById("idPaciente").value = "";
+            document.getElementById("especialidadeMedica").value = "";
+            document.getElementById("nomeMedico").value = "";
+            document.getElementById("valorConsulta").value = "";
+            document.getElementById("dataHoraConsulta").value = "";
+            carregarAgendamentos();
+        } else {
+            await handleApiError(response, 'Erro no agendamento');
+        }
+    } catch(error) {
+        const errorDiv = document.getElementById('general-error');
+        errorDiv.textContent = "Erro de conexão: Não foi possível comunicar com o servidor.";
+        errorDiv.style.display = 'block';
+    }
+}
+
+async function carregarAgendamentos() {
+    clearErrors();
+    try {
+        const response = await fetch(urlAPIAgendamentos);
+        if (!response.ok) {
+            await handleApiError(response, 'Erro ao carregar agendamentos');
+            return;
+        }
+        const agendamentos = await response.json();
+        const listaDiv = document.getElementById("listaAgendamentos");
+        listaDiv.innerHTML = "";
+
+        if (agendamentos.length === 0) {
+            listaDiv.innerHTML = "<p>Nenhuma consulta agendada.</p>"; return;
+        }
+        let linhas = "<tr><th>Nº Agend.</th><th>ID Paciente</th><th>Especialidade</th><th>Médico(a)</th><th>Data e Hora</th><th>Status</th><th>Valor (R$)</th></tr>";
+        agendamentos.forEach(ag => {
+            const dataFormatada = new Date(ag.dataHoraConsulta).toLocaleString('pt-BR');
+            linhas += `<tr><td>${ag.id}</td><td>${ag.idPaciente}</td><td>${ag.especialidadeMedica}</td><td>${ag.nomeMedico}</td><td>${dataFormatada}</td><td>${ag.status}</td><td>R$ ${ag.valorConsulta.toFixed(2)}</td></tr>`;
+        });
+        listaDiv.innerHTML = '<h3>Listagem de Agendamentos</h3><table border="1">' + linhas + '</table>';
+    } catch (error) {
+        const errorDiv = document.getElementById('general-error');
+        errorDiv.textContent = "Erro de conexão: Não foi possível comunicar com o servidor.";
+        errorDiv.style.display = 'block';
+    }
+}
+
+window.onload = carregarAgendamentos;
+</script>
